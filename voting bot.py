@@ -26,32 +26,6 @@ command_list = \
     '/somefunction [some parameters] - некоторая новая функция\n' \
     '/help - полный перечень команд'
 
-keyboard_markup_buttons = {
-    'menu_keyboard': (
-        InlineKeyboardButton('Новый опрос', callback_data='new_poll'),
-        InlineKeyboardButton('Мои опросы', callback_data='my_polls')
-    ),
-    'yes_no_keyboard': (
-        InlineKeyboardButton('Да', callback_data='yes'),
-        InlineKeyboardButton('Нет', callback_data='no')
-    ),
-    'confirm_keyboard': (
-        InlineKeyboardButton('Подтвердить', callback_data='confirm'),
-        InlineKeyboardButton('Назад', callback_data='cancel')
-    ),
-    'go_to_menu_keyboard': (
-        InlineKeyboardButton('В меню', callback_data='go_to_menu'),
-    )
-}
-keyboard_markups = {
-    'menu_keyboard': InlineKeyboardMarkup(row_width=1),
-    'yes_no_keyboard': InlineKeyboardMarkup(row_width=2),
-    'confirm_keyboard': InlineKeyboardMarkup(row_width=2),
-    'go_to_menu_keyboard': InlineKeyboardMarkup(row_width=1)
-}
-for keyboard_name, keyboard in keyboard_markups.items():
-    keyboard.add(*keyboard_markup_buttons[keyboard_name])
-
 
 def keyboard_builder(row_width: int, buttons: tuple[tuple[str, str]]):
     keyboard = InlineKeyboardMarkup(row_width=row_width)
