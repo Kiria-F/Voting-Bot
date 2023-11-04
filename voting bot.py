@@ -23,8 +23,8 @@ bot = telebot.TeleBot(config['bot_token'])
 db_book = xl.load_workbook('stat.xlsx')
 db_sheet = db_book.active
 connected_user_chat_ids = []
-new_polls_stash: dict[int, Poll] = {}
-polls_list: dict[int, list[Poll]] = {}
+new_creating_polls: dict[int, Poll] = {}
+stashed_polls: dict[int, list[Poll]] = {}
 invitations = []
 command_list = \
     'Полный список команд:\n' \
@@ -33,7 +33,7 @@ command_list = \
     '/help - полный перечень команд'
 
 
-def keyboard_builder(row_width: int, buttons: tuple[tuple[str, str], ...]) -> InlineKeyboardMarkup:
+def keyboard_builder(row_width: int, *buttons: tuple[str, str]) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=row_width)
     for button in buttons:
         keyboard.add(InlineKeyboardButton(button[0], callback_data=button[1]))
@@ -75,36 +75,50 @@ def get_next_id() -> int:
 @bot.message_handler(commands=['start'])
 def start_command(message: Message):
     bot.send_message(message.from_user.id,
-                     "Привет, я чат-бот для проведения анонимного голосования.\n\n" + command_list,
-                     reply_markup=keyboard_builder(1, (('Меню', 'menu'),)))
-
-
-@bot.message_handler(commands=['menu'])
-def menu_command(message: Message):
-    bot.send_message(message.from_user.id,
-                     'Меню',
-                     reply_markup=keyboard_builder(1, (
-                         ('Новый опрос', 'new_poll'),
-                         ('Мои опросы', 'my_polls'))))
-
-
-@bot.callback_query_handler(lambda cb: cb.data.startswith('menu '))
-def menu_handler(callback: CallbackQuery):
-    param = callback.data.split(maxsplit=1)[1]
-    if param == 'clear_poll_stash':
-        new_polls_stash.pop(callback.from_user.id)
-    bot.answer_callback_query(callback.id)
-    bot.edit_message_text('Меню',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(1, (
-                              ('Новый опрос', 'new_poll'),
-                              ('Мои опросы', 'my_polls'))))
+                     "Привет, я чат-бот для проведения анонимных опросов.\n\n" + command_list,
+                     reply_markup=keyboard_builder(
+                         1,
+                         ('Меню', 'menu')))
 
 
 @bot.message_handler(commands=['help'])
 def help_command(message: Message):
     bot.send_message(message.from_user.id, command_list)
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                            Меню управления опросами                            ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+@bot.message_handler(commands=['menu'])
+def menu_command(message: Message):
+    bot.send_message(message.from_user.id,
+                     'Меню управления опросами',
+                     reply_markup=keyboard_builder(
+                         1,
+                         ('Создать новый', 'new_poll'),
+                         ('Мои отложенные', 'stashed_polls'),
+                         ('Активные', 'active_polls'),
+                         ('Архив', 'archived_polls')))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
+def menu_handler(callback: CallbackQuery):
+    if len(callback.data.split(maxsplit=1)) > 1:
+        param = callback.data.split(maxsplit=1)[1]
+        if param == 'clear_new_poll':
+            new_creating_polls.pop(callback.from_user.id)
+    bot.answer_callback_query(callback.id)
+    bot.edit_message_text('Меню управления опросами',
+                          callback.message.chat.id,
+                          callback.message.id,
+                          reply_markup=keyboard_builder(
+                              1,
+                              ('Создать новый', 'new_poll'),
+                              ('Мои отложенные', 'stashed_polls'),
+                              ('Активные', 'active_polls'),
+                              ('Архив', 'archived_polls')))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -129,42 +143,61 @@ def poll_init_topic_handler(message: Message):
 def poll_init_answers_handler(message: Message, question: str):
     poll_json = {'question': question, 'answers': list(map(str.strip, message.text.split(";")))}
     poll = Poll(**poll_json)
-    new_polls_stash[message.from_user.id] = poll
+    new_creating_polls[message.from_user.id] = poll
     joiner = '\n- '
     bot.send_message(message.from_user.id,
                      f"Ваш опрос:\n__{poll.question}__"
                      f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}"
                      f"\n\nПодтвердить создание опроса?",
-                     reply_markup=keyboard_builder(2, (
+                     reply_markup=keyboard_builder(
+                         2,
                          ('Подтвердить', 'confirm_new_poll'),
-                         ('Назад', 'menu clear_poll_stash'))),
+                         ('Назад', 'menu clear_new_poll')),
                      parse_mode='Markdown')
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'confirm_new_poll')
 def confirm_new_poll_handler(callback: CallbackQuery):
-    new_polls_stash[callback.from_user.id].id = get_next_id()
+    new_creating_polls[callback.from_user.id].id = get_next_id()
     bot.answer_callback_query(callback.id)
     bot.edit_message_text('Начать опрос сейчас?',
                           callback.message.chat.id,
                           callback.message.id,
-                          reply_markup=keyboard_builder(2, (
-                              ('Да', 'start_poll from_stash'),
-                              ('Нет', 'save_poll'))))
+                          reply_markup=keyboard_builder(
+                              2,
+                              ('Да', 'start_poll new'),
+                              ('Нет', 'save_poll')))
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'save_poll')
 def save_poll_to_stack_handler(callback: CallbackQuery):
-    poll = new_polls_stash.pop(callback.from_user.id)
-    if callback.from_user.id not in polls_list:
-        polls_list[callback.from_user.id] = []
-    polls_list[callback.from_user.id].append(poll)
+    poll = new_creating_polls.pop(callback.from_user.id)
+    if callback.from_user.id not in stashed_polls:
+        stashed_polls[callback.from_user.id] = []
+    stashed_polls[callback.from_user.id].append(poll)
     bot.answer_callback_query(callback.id)
     bot.edit_message_text('Опрос сохранен',
                           callback.message.chat.id,
                           callback.message.id,
-                          reply_markup=keyboard_builder(1, (
-                              ('Вернуться в меню', 'menu'),)))
+                          reply_markup=keyboard_builder(
+                              1, ('Вернуться в меню', 'menu')))
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                        Управление отложенными опросами                         ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+@bot.callback_query_handler(lambda cb: cb.data == 'stashed_polls')
+def stashed_polls_handler(callback: CallbackQuery):
+    bot.answer_callback_query(callback.id)
+    bot.edit_message_text('Список отложенных опросов',
+                          callback.message.chat.id,
+                          callback.message.id,
+                          reply_markup=keyboard_builder(
+                              1,
+                              *map(lambda poll: (poll.question, poll.id), stashed_polls[callback.from_user.id]),
+                              ('Вернуться в меню', 'menu')))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -197,28 +230,28 @@ def register_command(message: Message):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
-# ║                    Подписка и отписка от новых голосований                     ║
+# ║                      Подписка и отписка от новых опросов                       ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
 
 @bot.message_handler(commands=['subscribe'])
 def subscribe_command(message: Message):
     if message.from_user.id in config['subscribed']:
-        bot.send_message(message.from_user.id, 'Вы уже подписаны на голосования')
+        bot.send_message(message.from_user.id, 'Вы уже подписаны на опросы')
         return
     config['subscribed'].append(message.from_user.id)
     json.dump(config, open('config.json', 'w'), indent=4)
-    bot.send_message(message.from_user.id, 'Вы подписались на голосования')
+    bot.send_message(message.from_user.id, 'Вы подписались на опросы')
 
 
 @bot.message_handler(commands=['unsubscribe'])
 def subscribe_command(message: Message):
     if message.from_user.id not in config['subscribed']:
-        bot.send_message(message.from_user.id, 'Вы и не были подписаны на голосования')
+        bot.send_message(message.from_user.id, 'Вы и не были подписаны на опросы')
         return
     config['subscribed'].remove(message.from_user.id)
     json.dump(config, open('config.json', 'w'), indent=4)
-    bot.send_message(message.from_user.id, 'Вы отписались от голосований')
+    bot.send_message(message.from_user.id, 'Вы отписались от опросов')
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
