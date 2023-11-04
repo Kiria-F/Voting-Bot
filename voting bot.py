@@ -146,7 +146,7 @@ def poll_init_answers_handler(message: Message, question: str):
     new_creating_polls[message.from_user.id] = poll
     joiner = '\n- '
     bot.send_message(message.from_user.id,
-                     f"Ваш опрос:\n__{poll.question}__"
+                     f"Тема опроса:\n*{poll.question}*"
                      f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}"
                      f"\n\nПодтвердить создание опроса?",
                      reply_markup=keyboard_builder(
@@ -196,8 +196,35 @@ def stashed_polls_handler(callback: CallbackQuery):
                           callback.message.id,
                           reply_markup=keyboard_builder(
                               1,
-                              *map(lambda poll: (poll.question, poll.id), stashed_polls[callback.from_user.id]),
+                              *map(lambda poll: (poll.question, 'stashed_poll ' + str(poll.id)),
+                                   stashed_polls[callback.from_user.id]),
                               ('Вернуться в меню', 'menu')))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('stashed_poll '))
+def stashed_poll_handler(callback: CallbackQuery):
+    poll_id = int(callback.data.split(maxsplit=1)[1])
+    poll = next((poll for poll in stashed_polls[callback.from_user.id] if poll.id == poll_id), None)
+    bot.answer_callback_query(callback.id)
+    if poll is None:
+        bot.edit_message_text('Опрос поврежден или не найден',
+                              callback.message.chat.id,
+                              callback.message.id,
+                              reply_markup=keyboard_builder(
+                                  1,
+                                  ('Назад', 'stashed_polls')))
+        return
+    joiner = '\n- '
+    bot.edit_message_text(f"Тема опроса:\n*{poll.question}*"
+                          f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}",
+                          callback.message.chat.id,
+                          callback.message.id,
+                          reply_markup=keyboard_builder(
+                              2,
+                              ('Запустить', f'start_poll {poll.id}'),
+                              ('Удалить', f'remove_stashed_poll {poll.id}'),
+                              ('Назад', f'stashed_poll {poll.id}')),
+                          parse_mode='Markdown')
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
