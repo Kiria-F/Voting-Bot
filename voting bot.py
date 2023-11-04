@@ -107,6 +107,11 @@ def help_command(message: Message):
     bot.send_message(message.from_user.id, command_list)
 
 
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                             Создание нового опроса                             ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
 @bot.callback_query_handler(lambda cb: cb.data == 'new_poll')
 @admin_permission
 def new_poll_handler(callback: CallbackQuery):
@@ -162,6 +167,11 @@ def save_poll_to_stack_handler(callback: CallbackQuery):
                               ('Вернуться в меню', 'menu'),)))
 
 
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                           Добавление администраторов                           ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
 @bot.message_handler(commands=['createinvitation'])
 def create_invitation_command(message: Message):
     if message.from_user.id != config['bot_holder']:
@@ -186,6 +196,11 @@ def register_command(message: Message):
     bot.send_message(message.from_user.id, 'Вы зарегистрированы как администратор!')
 
 
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                    Подписка и отписка от новых голосований                     ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
 @bot.message_handler(commands=['subscribe'])
 def subscribe_command(message: Message):
     if message.from_user.id in config['subscribed']:
@@ -204,6 +219,11 @@ def subscribe_command(message: Message):
     config['subscribed'].remove(message.from_user.id)
     json.dump(config, open('config.json', 'w'), indent=4)
     bot.send_message(message.from_user.id, 'Вы отписались от голосований')
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                                   Служебное                                    ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
 
 
 @bot.message_handler(commands=['echo'])
