@@ -16,6 +16,7 @@ class Poll:
         self.question = question
         self.answers = answers
         self.state = state
+        self.id = -1
 
 
 config = json.load(open('config.json'))
@@ -65,6 +66,14 @@ def bot_holder_permission(func):
     return wrapper
 
 
+def instant_callback_answer(func):
+    def wrapper(callback: CallbackQuery, *args, **kwargs):
+        bot.answer_callback_query(callback.id)
+        return func(callback, *args, **kwargs)
+
+    return wrapper
+
+
 def get_next_id() -> int:
     next_id = db_sheet['B1'].value
     next_id += 1
@@ -100,12 +109,12 @@ def menu_command(message: Message):
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
+@instant_callback_answer
 def menu_handler(callback: CallbackQuery):
     if len(callback.data.split(maxsplit=1)) > 1:
         param = callback.data.split(maxsplit=1)[1]
         if param == 'clear_new_poll':
             new_creating_polls.pop(callback.from_user.id)
-    bot.answer_callback_query(callback.id)
     bot.edit_message_text('Меню управления опросами:',
                           callback.message.chat.id,
                           callback.message.id,
@@ -121,8 +130,8 @@ def menu_handler(callback: CallbackQuery):
 
 @bot.callback_query_handler(lambda cb: cb.data == 'new_poll')
 @admin_permission
+@instant_callback_answer
 def new_poll_handler(callback: CallbackQuery):
-    bot.answer_callback_query(callback.id)
     bot.send_message(callback.from_user.id, "Введите тему опроса")
     bot.register_next_step_handler(callback.message, poll_init_topic_handler)
 
@@ -149,9 +158,10 @@ def poll_init_answers_handler(message: Message, question: str):
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'confirm_new_poll')
+@instant_callback_answer
 def confirm_new_poll_handler(callback: CallbackQuery):
-    new_creating_polls[callback.from_user.id].id = get_next_id()
-    bot.answer_callback_query(callback.id)
+    if new_creating_polls[callback.from_user.id].id == -1:
+        new_creating_polls[callback.from_user.id].id = get_next_id()
     bot.edit_message_text('Начать опрос сейчас?',
                           callback.message.chat.id,
                           callback.message.id,
@@ -159,12 +169,12 @@ def confirm_new_poll_handler(callback: CallbackQuery):
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'save_poll')
+@instant_callback_answer
 def save_poll_to_stack_handler(callback: CallbackQuery):
     poll = new_creating_polls.pop(callback.from_user.id)
     if callback.from_user.id not in stashed_polls:
         stashed_polls[callback.from_user.id] = []
     stashed_polls[callback.from_user.id].append(poll)
-    bot.answer_callback_query(callback.id)
     bot.edit_message_text('Опрос сохранен.',
                           callback.message.chat.id,
                           callback.message.id,
@@ -176,16 +186,49 @@ def save_poll_to_stack_handler(callback: CallbackQuery):
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
 
+def check_admin_id_in_stash(func):
+    def wrapper(callback: CallbackQuery, *args, **kwargs):
+        if callback.from_user.id not in stashed_polls:
+            bot.answer_callback_query(callback.id)
+            bot.edit_message_text('Ваши сохраненные опросы не найдены.\n'
+                                  'Возможно, это было вызвано перезапуском сервера.\n'
+                                  'Если вы уверены, что это ошибка бота, свяжитесь с разработчиками.',
+                                  callback.message.chat.id,
+                                  callback.message.id,
+                                  reply_markup=keyboard_builder([('Меню', 'menu')]))
+            return
+        return func(callback, *args, **kwargs)
+
+    return wrapper
+
+
+def check_and_get_poll_id_in_stash(func):
+    def wrapper(callback: CallbackQuery, *args, **kwargs):
+        callback_separated = callback.data.split()
+        poll = None
+        if len(callback_separated) > 1:
+            poll_id = callback_separated[1]
+            if poll_id.isnumeric():
+                poll_id = int(poll_id)
+                poll = next((poll for poll in stashed_polls[callback.from_user.id] if poll.id == poll_id), None)
+                if poll is None:
+                    bot.answer_callback_query(callback.id)
+                    bot.edit_message_text('Искомый опрос не найден.\n'
+                                          'Возможно, это было вызвано перезапуском сервера.\n'
+                                          'Если вы уверены, что это ошибка бота, свяжитесь с разработчиками.',
+                                          callback.message.chat.id,
+                                          callback.message.id,
+                                          reply_markup=keyboard_builder([('Меню', 'menu')]))
+                    return
+        return func(callback, poll, *args, **kwargs)
+
+    return wrapper
+
+
 @bot.callback_query_handler(lambda cb: cb.data == 'stashed_polls')
+@check_admin_id_in_stash
+@instant_callback_answer
 def stashed_polls_handler(callback: CallbackQuery):
-    if callback.from_user.id not in stashed_polls:
-        bot.answer_callback_query(callback.id)
-        bot.edit_message_text('Ваши сохраненные опросы не найдены.\nЭто могло быть вызвано перезапуском сервера.',
-                              callback.message.chat.id,
-                              callback.message.id,
-                              reply_markup=keyboard_builder([('Меню', 'menu')]))
-        return
-    bot.answer_callback_query(callback.id)
     bot.edit_message_text('Список отложенных опросов:',
                           callback.message.chat.id,
                           callback.message.id,
@@ -197,22 +240,10 @@ def stashed_polls_handler(callback: CallbackQuery):
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stashed_poll '))
-def stashed_poll_handler(callback: CallbackQuery):
-    bot.answer_callback_query(callback.id)
-    if callback.from_user.id not in stashed_polls:
-        bot.edit_message_text('Ваши сохраненные опросы не найдены.\nЭто могло быть вызвано перезапуском сервера.',
-                              callback.message.chat.id,
-                              callback.message.id,
-                              reply_markup=keyboard_builder([('Меню', 'menu')]))
-        return
-    poll_id = int(callback.data.split(maxsplit=1)[1])
-    poll = next((poll for poll in stashed_polls[callback.from_user.id] if poll.id == poll_id), None)
-    if poll is None:
-        bot.edit_message_text('Опрос поврежден или не найден.',
-                              callback.message.chat.id,
-                              callback.message.id,
-                              reply_markup=keyboard_builder([('Назад', 'stashed_polls')]))
-        return
+@check_admin_id_in_stash
+@check_and_get_poll_id_in_stash
+@instant_callback_answer
+def stashed_poll_handler(callback: CallbackQuery, poll: Poll):
     joiner = '\n- '
     bot.edit_message_text(f"Тема опроса:\n*{poll.question}*"
                           f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}",
@@ -222,6 +253,53 @@ def stashed_poll_handler(callback: CallbackQuery):
                               [('Запустить', f'start_poll {poll.id}'), ('Удалить', f'remove_stashed_poll {poll.id}')],
                               [('Назад', 'stashed_polls')]),
                           parse_mode='Markdown')
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('remove_stashed_poll '))
+@check_admin_id_in_stash
+@check_and_get_poll_id_in_stash
+def remove_stashed_poll_handler(callback: CallbackQuery, poll: Poll):
+    plug_handler(callback, 'menu')
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                                 Запуск опроса                                  ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+@bot.callback_query_handler(lambda cb: cb.data == 'start_new_poll')
+@instant_callback_answer
+def start_new_poll_handler(callback: CallbackQuery):
+    if callback.from_user.id not in new_creating_polls:
+        return
+    plug_handler(callback, 'menu')
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('start_poll '))
+@check_admin_id_in_stash
+@check_and_get_poll_id_in_stash
+def start_stashed_poll_handler(callback: CallbackQuery, poll: Poll):
+    plug_handler(callback, f'stashed_poll {poll.id}')
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                         Управление активными опросами                          ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+@bot.callback_query_handler(lambda cb: cb.data == 'active_polls')
+def active_polls_handler(callback: CallbackQuery):
+    plug_handler(callback, 'menu')
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                               Управление архивом                               ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+@bot.callback_query_handler(lambda cb: cb.data == 'archived_polls')
+def archived_polls_handler(callback: CallbackQuery):
+    plug_handler(callback, 'menu')
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -281,6 +359,18 @@ def subscribe_command(message: Message):
 # ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                                   Служебное                                    ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
+def plug_command(message: Message):
+    bot.send_message(message.from_user.id, 'В разработке.')
+
+
+@instant_callback_answer
+def plug_handler(callback: CallbackQuery, home: str):
+    bot.edit_message_text('В разработке.',
+                          callback.message.chat.id,
+                          callback.message.id,
+                          reply_markup=keyboard_builder([('Назад', home)]))
 
 
 @bot.message_handler(commands=['echo'])
