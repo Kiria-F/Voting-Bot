@@ -7,18 +7,24 @@ import json
 
 
 class Poll:
-    state = 'active'
+    id: int
+    question: str
+    answers: list[str]
+    state: str
 
-    def __init__(self, question: str, answers: list[str]):
+    def __init__(self, question: str, answers: list[str], state: str = 'local'):
         self.question = question
         self.answers = answers
+        self.state = state
 
 
 config = json.load(open('config.json'))
 bot = telebot.TeleBot(config['bot_token'])
-db = xl.load_workbook('stat.xlsx')
+db_book = xl.load_workbook('stat.xlsx')
+db_sheet = db_book.active
 connected_user_chat_ids = []
-poll_stack = []
+new_polls_stash: dict[int, Poll] = {}
+polls_list: dict[int, list[Poll]] = {}
 invitations = []
 command_list = \
     'Полный список команд:\n' \
@@ -58,6 +64,14 @@ def bot_holder_permission(func):
     return wrapper
 
 
+def get_next_id() -> int:
+    next_id = db_sheet['B1'].value
+    next_id += 1
+    db_sheet['B1'].value = next_id
+    db_book.save('stat.xlsx')
+    return next_id
+
+
 @bot.message_handler(commands=['start'])
 def start_command(message: Message):
     bot.send_message(message.from_user.id,
@@ -74,8 +88,12 @@ def menu_command(message: Message):
                          ('Мои опросы', 'my_polls'))))
 
 
-@bot.callback_query_handler(lambda cb: cb.data == 'menu')
+@bot.callback_query_handler(lambda cb: cb.data.startswith('menu '))
 def menu_handler(callback: CallbackQuery):
+    param = callback.data.split(maxsplit=1)[1]
+    if param == 'clear_poll_stash':
+        new_polls_stash.pop(callback.from_user.id)
+    bot.answer_callback_query(callback.id)
     bot.edit_message_text('Меню',
                           callback.message.chat.id,
                           callback.message.id,
@@ -104,33 +122,39 @@ def poll_init_topic_handler(message: Message):
 
 
 def poll_init_answers_handler(message: Message, question: str):
-    poll = {'question': question, 'answers': list(map(str.strip, message.text.split(";")))}
-    joiner = '\n '
+    poll_json = {'question': question, 'answers': list(map(str.strip, message.text.split(";")))}
+    poll = Poll(**poll_json)
+    new_polls_stash[message.from_user.id] = poll
+    joiner = '\n- '
     bot.send_message(message.from_user.id,
-                     f"Ваш опрос:\n{poll['question']}"
-                     f"\n\nВарианты ответов:{joiner + joiner.join(poll['answers'])}"
+                     f"Ваш опрос:\n__{poll.question}__"
+                     f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}"
                      f"\n\nПодтвердить создание опроса?",
                      reply_markup=keyboard_builder(2, (
-                         ('Подтвердить', f'confirm_new_poll {json.dumps(poll)}'),
-                         ('Назад', 'menu'))))
+                         ('Подтвердить', 'confirm_new_poll'),
+                         ('Назад', 'menu clear_poll_stash'))),
+                     parse_mode='Markdown')
 
 
-@bot.callback_query_handler(lambda cb: cb.data.startswith('confirm_new_poll'))
+@bot.callback_query_handler(lambda cb: cb.data == 'confirm_new_poll')
 def confirm_new_poll_handler(callback: CallbackQuery):
+    new_polls_stash[callback.from_user.id].id = get_next_id()
     bot.answer_callback_query(callback.id)
     bot.edit_message_text('Начать опрос сейчас?',
                           callback.message.chat.id,
                           callback.message.id,
                           reply_markup=keyboard_builder(2, (
-                              ('Да', f'start_poll {callback.data.split(maxsplit=1)[1]}'),
-                              ('Нет', f'save_poll_to_stack {callback.data.split(maxsplit=1)[1]}'))))
+                              ('Да', 'start_poll from_stash'),
+                              ('Нет', 'save_poll'))))
 
 
-@bot.callback_query_handler(lambda cb: cb.data.startswith('save_poll_to_stack'))
+@bot.callback_query_handler(lambda cb: cb.data == 'save_poll')
 def save_poll_to_stack_handler(callback: CallbackQuery):
+    poll = new_polls_stash.pop(callback.from_user.id)
+    if callback.from_user.id not in polls_list:
+        polls_list[callback.from_user.id] = []
+    polls_list[callback.from_user.id].append(poll)
     bot.answer_callback_query(callback.id)
-    poll = json.loads(callback.data.split(maxsplit=1)[1])
-    poll_stack.append(poll)
     bot.edit_message_text('Опрос сохранен',
                           callback.message.chat.id,
                           callback.message.id,
@@ -187,7 +211,7 @@ def echo_command(message: Message):
     print(f'\nID: {message.from_user.id}\n'
           f'Имя: {message.from_user.first_name}\n'
           f'Фамилия: {message.from_user.last_name}\n'
-          f'Никнейм: {message.from_user.username}\n')
+          f'Ссылка: @{message.from_user.username}\n')
 
 
 bot.infinity_polling()
