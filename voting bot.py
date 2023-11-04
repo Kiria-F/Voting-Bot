@@ -33,10 +33,11 @@ command_list = \
     '/help - полный перечень команд'
 
 
-def keyboard_builder(row_width: int, *buttons: tuple[str, str]) -> InlineKeyboardMarkup:
-    keyboard = InlineKeyboardMarkup(row_width=row_width)
-    for button in buttons:
-        keyboard.add(InlineKeyboardButton(button[0], callback_data=button[1]))
+def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(row_width=max_row_width)
+    for button_row in button_rows:
+        keyboard.add(*map(lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row),
+                     row_width=len(button_row))
     return keyboard
 
 
@@ -76,9 +77,7 @@ def get_next_id() -> int:
 def start_command(message: Message):
     bot.send_message(message.from_user.id,
                      "Привет, я чат-бот для проведения анонимных опросов.\n\n" + command_list,
-                     reply_markup=keyboard_builder(
-                         1,
-                         ('Меню', 'menu')))
+                     reply_markup=keyboard_builder([('Меню', 'menu')]))
 
 
 @bot.message_handler(commands=['help'])
@@ -96,11 +95,8 @@ def menu_command(message: Message):
     bot.send_message(message.from_user.id,
                      'Меню управления опросами',
                      reply_markup=keyboard_builder(
-                         1,
-                         ('Создать новый', 'new_poll'),
-                         ('Мои отложенные', 'stashed_polls'),
-                         ('Активные', 'active_polls'),
-                         ('Архив', 'archived_polls')))
+                         [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
+                         [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
@@ -110,15 +106,12 @@ def menu_handler(callback: CallbackQuery):
         if param == 'clear_new_poll':
             new_creating_polls.pop(callback.from_user.id)
     bot.answer_callback_query(callback.id)
-    bot.edit_message_text('Меню управления опросами',
+    bot.edit_message_text('Меню управления опросами:',
                           callback.message.chat.id,
                           callback.message.id,
                           reply_markup=keyboard_builder(
-                              1,
-                              ('Создать новый', 'new_poll'),
-                              ('Мои отложенные', 'stashed_polls'),
-                              ('Активные', 'active_polls'),
-                              ('Архив', 'archived_polls')))
+                              [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
+                              [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -150,9 +143,8 @@ def poll_init_answers_handler(message: Message, question: str):
                      f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}"
                      f"\n\nПодтвердить создание опроса?",
                      reply_markup=keyboard_builder(
-                         2,
-                         ('Подтвердить', 'confirm_new_poll'),
-                         ('Назад', 'menu clear_new_poll')),
+                         [('Подтвердить', 'confirm_new_poll')],
+                         [('Назад', 'menu clear_new_poll')]),
                      parse_mode='Markdown')
 
 
@@ -163,10 +155,7 @@ def confirm_new_poll_handler(callback: CallbackQuery):
     bot.edit_message_text('Начать опрос сейчас?',
                           callback.message.chat.id,
                           callback.message.id,
-                          reply_markup=keyboard_builder(
-                              2,
-                              ('Да', 'start_poll new'),
-                              ('Нет', 'save_poll')))
+                          reply_markup=keyboard_builder([('Да', 'start_poll new'), ('Нет', 'save_poll')]))
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'save_poll')
@@ -176,11 +165,10 @@ def save_poll_to_stack_handler(callback: CallbackQuery):
         stashed_polls[callback.from_user.id] = []
     stashed_polls[callback.from_user.id].append(poll)
     bot.answer_callback_query(callback.id)
-    bot.edit_message_text('Опрос сохранен',
+    bot.edit_message_text('Опрос сохранен.',
                           callback.message.chat.id,
                           callback.message.id,
-                          reply_markup=keyboard_builder(
-                              1, ('Вернуться в меню', 'menu')))
+                          reply_markup=keyboard_builder([('Вернуться в меню', 'menu')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -190,29 +178,40 @@ def save_poll_to_stack_handler(callback: CallbackQuery):
 
 @bot.callback_query_handler(lambda cb: cb.data == 'stashed_polls')
 def stashed_polls_handler(callback: CallbackQuery):
+    if callback.from_user.id not in stashed_polls:
+        bot.answer_callback_query(callback.id)
+        bot.edit_message_text('Ваши сохраненные опросы не найдены.\nЭто могло быть вызвано перезапуском сервера.',
+                              callback.message.chat.id,
+                              callback.message.id,
+                              reply_markup=keyboard_builder([('Меню', 'menu')]))
+        return
     bot.answer_callback_query(callback.id)
-    bot.edit_message_text('Список отложенных опросов',
+    bot.edit_message_text('Список отложенных опросов:',
                           callback.message.chat.id,
                           callback.message.id,
                           reply_markup=keyboard_builder(
-                              1,
-                              *map(lambda poll: (poll.question, 'stashed_poll ' + str(poll.id)),
-                                   stashed_polls[callback.from_user.id]),
-                              ('Вернуться в меню', 'menu')))
+                              list(map(lambda poll: (poll.question, 'stashed_poll ' + str(poll.id)),
+                                       stashed_polls[callback.from_user.id])),
+                              [('Назад', 'menu')],
+                              max_row_width=2))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stashed_poll '))
 def stashed_poll_handler(callback: CallbackQuery):
-    poll_id = int(callback.data.split(maxsplit=1)[1])
-    poll = next((poll for poll in stashed_polls[callback.from_user.id] if poll.id == poll_id), None)
     bot.answer_callback_query(callback.id)
-    if poll is None:
-        bot.edit_message_text('Опрос поврежден или не найден',
+    if callback.from_user.id not in stashed_polls:
+        bot.edit_message_text('Ваши сохраненные опросы не найдены.\nЭто могло быть вызвано перезапуском сервера.',
                               callback.message.chat.id,
                               callback.message.id,
-                              reply_markup=keyboard_builder(
-                                  1,
-                                  ('Назад', 'stashed_polls')))
+                              reply_markup=keyboard_builder([('Меню', 'menu')]))
+        return
+    poll_id = int(callback.data.split(maxsplit=1)[1])
+    poll = next((poll for poll in stashed_polls[callback.from_user.id] if poll.id == poll_id), None)
+    if poll is None:
+        bot.edit_message_text('Опрос поврежден или не найден.',
+                              callback.message.chat.id,
+                              callback.message.id,
+                              reply_markup=keyboard_builder([('Назад', 'stashed_polls')]))
         return
     joiner = '\n- '
     bot.edit_message_text(f"Тема опроса:\n*{poll.question}*"
@@ -220,10 +219,8 @@ def stashed_poll_handler(callback: CallbackQuery):
                           callback.message.chat.id,
                           callback.message.id,
                           reply_markup=keyboard_builder(
-                              2,
-                              ('Запустить', f'start_poll {poll.id}'),
-                              ('Удалить', f'remove_stashed_poll {poll.id}'),
-                              ('Назад', f'stashed_poll {poll.id}')),
+                              [('Запустить', f'start_poll {poll.id}'), ('Удалить', f'remove_stashed_poll {poll.id}')],
+                              [('Назад', 'stashed_polls')]),
                           parse_mode='Markdown')
 
 
