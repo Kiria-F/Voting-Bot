@@ -258,6 +258,7 @@ def stashed_poll_handler(callback: CallbackQuery, poll: Poll):
 @bot.callback_query_handler(lambda cb: cb.data.startswith('remove_stashed_poll '))
 @check_admin_id_in_stash
 @check_and_get_poll_id_in_stash
+@instant_callback_answer
 def remove_stashed_poll_handler(callback: CallbackQuery, poll: Poll):
     polls = stashed_polls[callback.from_user.id]
     polls.remove(poll)
