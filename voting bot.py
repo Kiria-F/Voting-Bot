@@ -114,7 +114,7 @@ def menu_handler(callback: CallbackQuery):
     if len(callback.data.split(maxsplit=1)) > 1:
         param = callback.data.split(maxsplit=1)[1]
         if param == 'clear_new_poll':
-            new_creating_polls.pop(callback.from_user.id)
+            del new_creating_polls[callback.from_user.id]
     bot.edit_message_text('Меню управления опросами:',
                           callback.message.chat.id,
                           callback.message.id,
@@ -259,7 +259,14 @@ def stashed_poll_handler(callback: CallbackQuery, poll: Poll):
 @check_admin_id_in_stash
 @check_and_get_poll_id_in_stash
 def remove_stashed_poll_handler(callback: CallbackQuery, poll: Poll):
-    plug_handler(callback, 'menu')
+    polls = stashed_polls[callback.from_user.id]
+    polls.remove(poll)
+    if len(polls) == 0:
+        del stashed_polls[callback.from_user.id]
+    bot.edit_message_text('Опрос удален.',
+                          callback.message.chat.id,
+                          callback.message.id,
+                          reply_markup=keyboard_builder([('Вернуться в меню', 'menu')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
