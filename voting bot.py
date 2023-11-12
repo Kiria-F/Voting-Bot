@@ -45,7 +45,7 @@ def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> In
 def admin_permission(func):
     def wrapper(mes_cb: Message | CallbackQuery, *args, **kwargs):
         if mes_cb.from_user.id not in config['admin_list']:
-            if mes_cb is CallbackQuery:
+            if isinstance(mes_cb, CallbackQuery):
                 bot.answer_callback_query(mes_cb.id)
             bot.send_message(mes_cb.from_user.id, 'Только администраторы могут использовать эту команду')
             return
@@ -57,7 +57,7 @@ def admin_permission(func):
 def bot_holder_permission(func):
     def wrapper(mes_cb: Message | CallbackQuery, *args, **kwargs):
         if mes_cb.from_user.id != config['bot_holder']:
-            if mes_cb is CallbackQuery:
+            if isinstance(mes_cb, CallbackQuery):
                 bot.answer_callback_query(mes_cb.id)
             bot.send_message(mes_cb.from_user.id, 'Только владелец бота может использовать эту команду')
             return
