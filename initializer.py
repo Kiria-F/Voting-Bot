@@ -1,5 +1,5 @@
-import openpyexcel as xl
 import json
+import pandas as pd
 import os
 
 bot_token = input('Input bot token >>> ')
@@ -13,10 +13,5 @@ json.dump({'bot_token': bot_token,
 if 'polls' not in os.listdir():
     os.mkdir('polls')
 
-wb = xl.Workbook()
-sheet = wb.active
-sheet['A2'] = 'next_id'
-sheet['B2'] = 1
-wb.save('stat.xlsx')
-
-xl.Workbook().save('subscribed.xlsx')
+subscribed = pd.DataFrame(columns=['id'])
+subscribed.to_csv('subscribed.csv', index=False)

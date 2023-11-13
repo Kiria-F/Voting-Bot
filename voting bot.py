@@ -2,7 +2,7 @@ import random
 import string
 import telebot
 from telebot.types import *
-import openpyexcel as xl
+import pandas as pd
 import json
 
 
@@ -11,14 +11,13 @@ class Poll:
     answers: list[str]
     anonymous: bool
     multi_choice: bool
-    state: str
+    active: bool = True
     filename: str
+    stat: list[int]
 
 
 config = json.load(open('config.json'))
 bot = telebot.TeleBot(config['bot_token'])
-db_book = xl.load_workbook('stat.xlsx')
-db_sheet = db_book.active
 connected_user_chat_ids = []
 new_creating_polls: dict[int, Poll] = {}
 stashed_polls: dict[int, list[Poll]] = {}
@@ -152,13 +151,28 @@ def poll_init_topic_handler(message: Message):
 
 
 def poll_init_answers_handler(message: Message):
-    new_creating_polls[message.from_user.id].answers = list(map(str.strip, message.text.split(';')))
-    bot.send_message(message.from_user.id, 'Введите название соответствующего .xlsx файла')
+    poll = new_creating_polls[message.from_user.id]
+    poll.answers = list(map(str.strip, message.text.split(';')))
+    poll.stat = [0] * len(poll.answers)
+    bot.send_message(message.from_user.id, 'Введите название соответствующего .csv файла')
     bot.register_next_step_handler(message, poll_init_filename_handler)
 
 
 def poll_init_filename_handler(message: Message):
-    new_creating_polls[message.from_user.id].filename = message.text.strip()
+    filename = message.text.strip()
+    if filename + '.csv' in os.listdir('polls'):
+        bot.send_message(
+            message.from_user.id,
+            'Файл с таким названием уже существует, выберите другое название')
+        bot.register_next_step_handler(message, poll_init_filename_handler)
+        return
+    if len(filename) > 50:
+        bot.send_message(
+            message.from_user.id,
+            'Название слишком длинное (максимум 50 символов), выберите другое название')
+        bot.register_next_step_handler(message, poll_init_filename_handler)
+        return
+    new_creating_polls[message.from_user.id].filename = filename
     bot.send_message(message.from_user.id,
                      'Анонимность опроса:',
                      reply_markup=keyboard_builder(
@@ -196,7 +210,7 @@ def poll_init_multi_handler(callback: CallbackQuery):
     bot.send_message(callback.from_user.id,
                      f'Тема опроса:\n*{poll.question}*'
                      f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
-                     f'\n\nФайл: {poll.filename}.xlsx'
+                     f'\n\nФайл: {poll.filename}.csv'
                      f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
                      f'\nВозможность выбора нескольких вариантов: {"Да" if poll.multi_choice else "Нет"}'
                      f'\n\nПодтвердить создание опроса?',
@@ -291,7 +305,7 @@ def stashed_poll_handler(callback: CallbackQuery):
     joiner = '\n- '
     bot.edit_message_text(f'Тема опроса:\n*{poll.question}*'
                           f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
-                          f'\n\nФайл: {poll.filename}.xlsx'
+                          f'\n\nФайл: {poll.filename}.csv'
                           f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
                           f'\nВозможность выбора нескольких вариантов: {"Да" if poll.multi_choice else "Нет"}',
                           callback.message.chat.id,
@@ -336,7 +350,23 @@ def start_stashed_poll_handler(callback: CallbackQuery):
 
 
 def start_poll(poll: Poll):
-    pass
+    json.dump(poll, open(f'polls/{poll.filename}.json', 'w', encoding='utf-8'))
+
+    if poll.anonymous:
+        df = pd.DataFrame(columns=['id'])
+    elif not poll.multi_choice:
+        df = pd.DataFrame(columns=['id', 'answer'])
+    else:
+        df = pd.DataFrame(columns=['id'] + poll.answers)
+    df.to_csv(f'polls/{poll.filename}.csv', index=False)
+
+    subscribed = pd.read_csv('subscribed.csv')['id'].to_list()
+    for receiver in subscribed:
+        bot.send_message(
+            receiver,
+            poll.question,
+            reply_markup=keyboard_builder(
+                *list(map(lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')], enumerate(poll.answers)))))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -436,6 +466,11 @@ def echo_command(message: Message):
           f'Имя: {message.from_user.first_name}\n'
           f'Фамилия: {message.from_user.last_name}\n'
           f'Ссылка: @{message.from_user.username}\n')
+
+
+@bot.message_handler(commands=['test'])
+def test_command(message: Message):
+    bot.send_message(message.from_user.id, 'Тест', reply_markup=keyboard_builder([('Тест', 't' * 64)]))
 
 
 bot.infinity_polling()
