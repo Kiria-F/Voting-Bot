@@ -10,12 +10,11 @@ class Poll:
     id: int
     question: str
     answers: list[str]
+    anonymous: bool
+    multi_choice: bool
     state: str
 
-    def __init__(self, question: str, answers: list[str], state: str = 'local'):
-        self.question = question
-        self.answers = answers
-        self.state = state
+    def __init__(self):
         self.id = -1
 
 
@@ -85,7 +84,7 @@ def get_next_id() -> int:
 @bot.message_handler(commands=['start'])
 def start_command(message: Message):
     bot.send_message(message.from_user.id,
-                     "Привет, я чат-бот для проведения анонимных опросов.\n\n" + command_list,
+                     'Привет, я чат-бот для проведения анонимных опросов.\n\n' + command_list,
                      reply_markup=keyboard_builder([('Меню', 'menu')]))
 
 
@@ -132,28 +131,63 @@ def menu_handler(callback: CallbackQuery):
 @admin_permission
 @instant_callback_answer
 def new_poll_handler(callback: CallbackQuery):
-    bot.send_message(callback.from_user.id, "Введите тему опроса")
+    new_creating_polls[callback.from_user.id] = Poll()
+    bot.send_message(callback.from_user.id, 'Введите тему опроса')
     bot.register_next_step_handler(callback.message, poll_init_topic_handler)
 
 
 def poll_init_topic_handler(message: Message):
     question = message.text.strip()
-    bot.send_message(message.chat.id, "Ведите варианты ответов (через точку с запятой [   ;   ])")
-    bot.register_next_step_handler(message, poll_init_answers_handler, question)
+    new_creating_polls[message.from_user.id].question = question
+    bot.send_message(message.chat.id, 'Ведите варианты ответов (через точку с запятой [   ;   ])')
+    bot.register_next_step_handler(message, poll_init_answers_handler)
 
 
-def poll_init_answers_handler(message: Message, question: str):
-    poll_json = {'question': question, 'answers': list(map(str.strip, message.text.split(";")))}
-    poll = Poll(**poll_json)
-    new_creating_polls[message.from_user.id] = poll
-    joiner = '\n- '
+def poll_init_answers_handler(message: Message):
+    new_creating_polls[message.from_user.id].answers = list(map(str.strip, message.text.split(';')))
     bot.send_message(message.from_user.id,
-                     f"Тема опроса:\n*{poll.question}*"
-                     f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}"
-                     f"\n\nПодтвердить создание опроса?",
+                     'Анонимность опроса:',
+                     reply_markup=keyboard_builder(
+                         [('Анонимный', 'new_poll_set_anon anon'), ('Открытый', 'new_poll_set_anon open')],
+                     ))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('new_poll_set_anon '))
+@instant_callback_answer
+def poll_init_anon_handler(callback: CallbackQuery):
+    poll_type = callback.data.split(maxsplit=1)[1]
+    if poll_type == 'anon':
+        new_creating_polls[callback.from_user.id].anonymous = True
+    elif poll_type == 'open':
+        new_creating_polls[callback.from_user.id].anonymous = False
+    bot.send_message(callback.from_user.id,
+                     'Возможность выбора нескольких вариантов:',
+                     reply_markup=keyboard_builder(
+                         [('Один вариант', 'new_poll_set_multi single'),
+                          ('Несколько вариантов', 'new_poll_set_multi multi')],
+                     ))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('new_poll_set_multi '))
+@instant_callback_answer
+def poll_init_multi_handler(callback: CallbackQuery):
+    poll_type = callback.data.split(maxsplit=1)[1]
+    poll = new_creating_polls[callback.from_user.id]
+    if poll_type == 'multi':
+        poll.multi_choice = True
+    elif poll_type == 'single':
+        poll.multi_choice = False
+
+    joiner = '\n- '
+    bot.send_message(callback.from_user.id,
+                     f'Тема опроса:\n*{poll.question}*'
+                     f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
+                     f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
+                     f'\nВозможность выбора нескольких вариантов: {"Да" if poll.multi_choice else "Нет"}'
+                     f'\n\nПодтвердить создание опроса?',
                      reply_markup=keyboard_builder(
                          [('Подтвердить', 'confirm_new_poll')],
-                         [('Назад', 'menu clear_new_poll')]),
+                         [('Отмена', 'menu clear_new_poll')]),
                      parse_mode='Markdown')
 
 
@@ -245,8 +279,10 @@ def stashed_polls_handler(callback: CallbackQuery):
 @instant_callback_answer
 def stashed_poll_handler(callback: CallbackQuery, poll: Poll):
     joiner = '\n- '
-    bot.edit_message_text(f"Тема опроса:\n*{poll.question}*"
-                          f"\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}",
+    bot.edit_message_text(f'Тема опроса:\n*{poll.question}*'
+                          f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
+                          f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
+                          f'\nВозможность выбора нескольких вариантов: {"Да" if poll.multi_choice else "Нет"}',
                           callback.message.chat.id,
                           callback.message.id,
                           reply_markup=keyboard_builder(
