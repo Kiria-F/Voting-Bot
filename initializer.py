@@ -1,5 +1,6 @@
 import openpyexcel as xl
 import json
+import os
 
 bot_token = input('Input bot token >>> ')
 bot_holder = int(input('Input bot holder id >>> '))
@@ -9,9 +10,13 @@ json.dump({'bot_token': bot_token,
           open("config.json", "w"),
           indent=4)
 
+if 'polls' not in os.listdir():
+    os.mkdir('polls')
+
 wb = xl.Workbook()
 sheet = wb.active
-sheet['B1'] = 1
+sheet['A2'] = 'next_id'
+sheet['B2'] = 1
 wb.save('stat.xlsx')
 
 xl.Workbook().save('subscribed.xlsx')
