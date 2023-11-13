@@ -12,6 +12,7 @@ class Poll:
     anonymous: bool
     multi_choice: bool
     state: str
+    filename: str
 
 
 config = json.load(open('config.json'))
@@ -145,14 +146,19 @@ def new_poll_handler(callback: CallbackQuery):
 
 
 def poll_init_topic_handler(message: Message):
-    question = message.text.strip()
-    new_creating_polls[message.from_user.id].question = question
+    new_creating_polls[message.from_user.id].question = message.text.strip()
     bot.send_message(message.chat.id, 'Ведите варианты ответов (через точку с запятой [   ;   ])')
     bot.register_next_step_handler(message, poll_init_answers_handler)
 
 
 def poll_init_answers_handler(message: Message):
     new_creating_polls[message.from_user.id].answers = list(map(str.strip, message.text.split(';')))
+    bot.send_message(message.from_user.id, 'Введите название соответствующего .xlsx файла')
+    bot.register_next_step_handler(message, poll_init_filename_handler)
+
+
+def poll_init_filename_handler(message: Message):
+    new_creating_polls[message.from_user.id].filename = message.text.strip()
     bot.send_message(message.from_user.id,
                      'Анонимность опроса:',
                      reply_markup=keyboard_builder(
@@ -190,6 +196,7 @@ def poll_init_multi_handler(callback: CallbackQuery):
     bot.send_message(callback.from_user.id,
                      f'Тема опроса:\n*{poll.question}*'
                      f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
+                     f'\n\nФайл: {poll.filename}.xlsx'
                      f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
                      f'\nВозможность выбора нескольких вариантов: {"Да" if poll.multi_choice else "Нет"}'
                      f'\n\nПодтвердить создание опроса?',
@@ -284,6 +291,7 @@ def stashed_poll_handler(callback: CallbackQuery):
     joiner = '\n- '
     bot.edit_message_text(f'Тема опроса:\n*{poll.question}*'
                           f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
+                          f'\n\nФайл: {poll.filename}.xlsx'
                           f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
                           f'\nВозможность выбора нескольких вариантов: {"Да" if poll.multi_choice else "Нет"}',
                           callback.message.chat.id,
@@ -324,7 +332,7 @@ def start_new_poll_handler(callback: CallbackQuery):
 @check_admin_id_in_stash
 @check_poll_index_in_stash
 def start_stashed_poll_handler(callback: CallbackQuery):
-    plug_handler(callback)
+    start_poll(stashed_polls[callback.from_user.id].pop(int(callback.data.split()[1])))
 
 
 def start_poll(poll: Poll):
