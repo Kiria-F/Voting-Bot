@@ -425,21 +425,23 @@ def register_command(message: Message):
 
 @bot.message_handler(commands=['subscribe'])
 def subscribe_command(message: Message):
-    if message.from_user.id in config['subscribed']:
+    subscribed = pd.read_csv('subscribed.csv')
+    if message.from_user.id in subscribed['id'].values:
         bot.send_message(message.from_user.id, 'Вы уже подписаны на опросы')
         return
-    config['subscribed'].append(message.from_user.id)
-    json.dump(config, open('config.json', 'w'), indent=4)
+    subscribed = pd.concat([subscribed, pd.DataFrame([message.from_user.id], columns=['id'])])
+    subscribed.to_csv('subscribed.csv', index=False)
     bot.send_message(message.from_user.id, 'Вы подписались на опросы')
 
 
 @bot.message_handler(commands=['unsubscribe'])
 def subscribe_command(message: Message):
-    if message.from_user.id not in config['subscribed']:
-        bot.send_message(message.from_user.id, 'Вы и не были подписаны на опросы')
+    subscribed = pd.read_csv('subscribed.csv')
+    if message.from_user.id not in subscribed['id'].values:
+        bot.send_message(message.from_user.id, 'Вы не были подписаны на опросы')
         return
-    config['subscribed'].remove(message.from_user.id)
-    json.dump(config, open('config.json', 'w'), indent=4)
+    subscribed = subscribed[subscribed['id'] != message.from_user.id]
+    subscribed.to_csv('subscribed.csv', index=False)
     bot.send_message(message.from_user.id, 'Вы отписались от опросов')
 
 
