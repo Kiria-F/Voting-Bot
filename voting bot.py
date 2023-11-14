@@ -345,12 +345,13 @@ def start_new_poll_handler(callback: CallbackQuery):
 @bot.callback_query_handler(lambda cb: cb.data.startswith('start_poll '))
 @check_admin_id_in_stash
 @check_poll_index_in_stash
+@instant_callback_answer
 def start_stashed_poll_handler(callback: CallbackQuery):
     start_poll(stashed_polls[callback.from_user.id].pop(int(callback.data.split()[1])))
 
 
 def start_poll(poll: Poll):
-    json.dump(poll, open(f'polls/{poll.filename}.json', 'w', encoding='utf-8'))
+    json.dump(poll.__dict__, open(f'polls/{poll.filename}.json', 'w', encoding='utf-8'))
 
     if poll.anonymous:
         df = pd.DataFrame(columns=['id'])
@@ -362,6 +363,7 @@ def start_poll(poll: Poll):
 
     subscribed = pd.read_csv('subscribed.csv')['id'].to_list()
     for receiver in subscribed:
+        t = list(map(lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')], enumerate(poll.answers)))
         bot.send_message(
             receiver,
             poll.question,
@@ -443,6 +445,41 @@ def subscribe_command(message: Message):
     subscribed = subscribed[subscribed['id'] != message.from_user.id]
     subscribed.to_csv('subscribed.csv', index=False)
     bot.send_message(message.from_user.id, 'Вы отписались от опросов')
+
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                               Обработка голосов                                ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('vote '))
+def vote_handler(callback: CallbackQuery):
+    filename, answer = callback.data.split(maxsplit=3)[1:]
+    df = pd.read_csv(f'polls/{filename}.csv')
+    if callback.from_user.id in df['id'].values:
+        return
+    poll = json.load(open(f'polls/{filename}.json', encoding='utf-8'))
+
+    if poll['anonymous']:
+        df = pd.concat([df, pd.DataFrame([[callback.from_user.id]], columns=['id'])])
+    else:
+        if not poll['multi_choice']:
+            df = pd.concat([df, pd.DataFrame([[callback.from_user.id, int(answer)]], columns=['id', 'answer'])])
+        else:
+            answer = list(map(int, answer.split()))
+            df = pd.concat([df, pd.DataFrame([[callback.from_user.id] +
+                                              [1 if i in answer else 0 for i in range(len(poll['answers']))]],
+                                             columns=['id'] + poll['answers'])])
+    df.to_csv(f'polls/{filename}.csv', index=False)
+
+    if not poll['multi_choice']:
+        poll['stat'][int(answer)] += 1
+    else:
+        for ans in answer:
+            poll['stat'][ans] += 1
+    json.dump(poll, open(f'polls/{filename}.json', 'w', encoding='utf-8'))
+
+    bot.answer_callback_query(callback.id, 'Спасибо, Ваш голос учтен!')
+    bot.delete_message(callback.message.chat.id, callback.message.message_id)
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
