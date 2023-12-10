@@ -18,16 +18,19 @@ class Poll:
     stat: list[int] = None
 
     @staticmethod
-    def from_file(filename: str):
+    def load(filename: str):
         return Poll(**json.load(open(filename, encoding='utf-8')))
 
+    def dump(self, filename: str):
+        json.dump(self.__dict__, open(filename, 'w', encoding='utf-8'))
+
     def __str__(self):
-        pre_ans = '\n- '
-        return f'Тема опроса:\n*{self.question}*' \
-               f'\n\nВарианты ответов:{pre_ans + pre_ans.join(self.answers)}' \
-               f'\n\nФайл: {self.filename}.csv' \
-               f'\n\nАнонимный: {"Да" if self.anonymous else "Нет"}' \
-               f'\nМультивыбор: {"Да" if self.multi_choice else "Нет"}'
+        return f'Тема опроса:\n*{self.question}*' + \
+            '\n\nВарианты ответов:' + \
+            '\n- ' + '\n- '.join(self.answers) + \
+            f'\n\nФайл: {self.filename}.csv' + \
+            f'\n\nАнонимный: {"Да" if self.anonymous else "Нет"}' + \
+            f'\nМультивыбор: {"Да" if self.multi_choice else "Нет"}'
 
 
 config = json.load(open('config.json'))
@@ -36,20 +39,24 @@ connected_user_chat_ids = []
 new_creating_polls: dict[int, Poll] = {}
 stashed_polls: dict[int, list[Poll]] = {}
 invitations = []
-command_list = \
-    'Полный список команд:\n' \
-    '/menu - отобразить меню\n' \
-    '/somefunction [some parameters] - некоторая новая функция\n' \
-    '/help - полный перечень команд'
+command_list = 'Полный список команд:\n' \
+               '/menu - отобразить меню\n' \
+               '/somefunction [some parameters] - некоторая новая функция\n' \
+               '/help - полный перечень команд'
 
 
 def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=max_row_width)
     for button_row in button_rows:
-        keyboard.add(*map(lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row),
-                     row_width=len(button_row))
+        keyboard.add(*map(lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row), row_width=len(button_row))
     return keyboard
 
+
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                                   Декораторы                                   ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+# TODO Ещё кучу валидаторов
 
 def admin_permission(func):
     def wrapper(mes_cb: Message | CallbackQuery, *args, **kwargs):
@@ -83,11 +90,17 @@ def instant_callback_answer(func):
     return wrapper
 
 
+# ╔════════════════════════════════════════════════════════════════════════════════╗
+# ║                                     Общее                                      ║
+# ╚════════════════════════════════════════════════════════════════════════════════╝
+
+
 @bot.message_handler(commands=['start'])
 def start_command(message: Message):
-    bot.send_message(message.from_user.id,
-                     'Привет, я чат-бот для проведения анонимных опросов.\n\n' + command_list,
-                     reply_markup=keyboard_builder([('Меню', 'menu')]))
+    bot.send_message(
+        message.from_user.id,
+        'Привет, я чат-бот для проведения анонимных опросов.\n\n' + command_list,
+        reply_markup=keyboard_builder([('Меню', 'menu')]))
 
 
 @bot.message_handler(commands=['help'])
@@ -102,11 +115,12 @@ def help_command(message: Message):
 
 @bot.message_handler(commands=['menu'])
 def menu_command(message: Message):
-    bot.send_message(message.from_user.id,
-                     'Меню управления опросами',
-                     reply_markup=keyboard_builder(
-                         [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
-                         [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
+    bot.send_message(
+        message.from_user.id,
+        'Меню управления опросами',
+        reply_markup=keyboard_builder(
+            [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
+            [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
@@ -116,12 +130,13 @@ def menu_handler(callback: CallbackQuery):
         param = callback.data.split(maxsplit=1)[1]
         if param == 'clear_new_poll':
             del new_creating_polls[callback.from_user.id]
-    bot.edit_message_text('Меню управления опросами:',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
-                              [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
+    bot.edit_message_text(
+        'Меню управления опросами:',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
+            [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -187,11 +202,12 @@ def poll_init_filename_handler(message: Message):
         bot.register_next_step_handler(message, poll_init_filename_handler)
         return
     new_creating_polls[message.from_user.id].filename = filename
-    bot.send_message(message.from_user.id,
-                     'Анонимность опроса:',
-                     reply_markup=keyboard_builder(
-                         [('Анонимный', 'new_poll_set_anon anon'), ('Открытый', 'new_poll_set_anon open')],
-                     ))
+    bot.send_message(
+        message.from_user.id,
+        'Анонимность опроса:',
+        reply_markup=keyboard_builder(
+            [('Анонимный', 'new_poll_set_anon anon'), ('Открытый', 'new_poll_set_anon open')],
+        ))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('new_poll_set_anon '))
@@ -202,13 +218,14 @@ def poll_init_anon_handler(callback: CallbackQuery):
         new_creating_polls[callback.from_user.id].anonymous = True
     elif poll_type == 'open':
         new_creating_polls[callback.from_user.id].anonymous = False
-    bot.edit_message_text('Возможность выбора нескольких вариантов:',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              [('Один вариант', 'new_poll_set_multi single'),
-                               ('Несколько вариантов', 'new_poll_set_multi multi')],
-                          ))
+    bot.edit_message_text(
+        'Возможность выбора нескольких вариантов:',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Один вариант', 'new_poll_set_multi single'),
+             ('Несколько вариантов', 'new_poll_set_multi multi')],
+        ))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('new_poll_set_multi '))
@@ -221,13 +238,14 @@ def poll_init_multi_handler(callback: CallbackQuery):
     elif poll_type == 'single':
         poll.multi_choice = False
 
-    bot.edit_message_text(str(poll) + f'\n\nПодтвердить создание опроса?',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              [('Подтвердить', 'confirm_new_poll')],
-                              [('Отмена', 'menu clear_new_poll')]),
-                          parse_mode='Markdown')
+    bot.edit_message_text(
+        str(poll) + f'\n\nПодтвердить создание опроса?',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Подтвердить', 'confirm_new_poll')],
+            [('Отмена', 'menu clear_new_poll')]),
+        parse_mode='Markdown')
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'confirm_new_poll')
@@ -236,20 +254,22 @@ def confirm_new_poll_handler(callback: CallbackQuery):
     if callback.from_user.id not in stashed_polls:
         stashed_polls[callback.from_user.id] = []
     stashed_polls[callback.from_user.id].append(new_creating_polls[callback.from_user.id])
-    bot.edit_message_text('Начать опрос сейчас?',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder([('Да', 'start_new_poll'), ('Нет', 'stash_poll')]))
+    bot.edit_message_text(
+        'Начать опрос сейчас?',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Да', 'start_new_poll'), ('Нет', 'stash_poll')]))
 
 
 @bot.callback_query_handler(lambda cb: cb.data == 'stash_poll')
 @instant_callback_answer
 def stash_poll_handler(callback: CallbackQuery):
     del new_creating_polls[callback.from_user.id]
-    bot.edit_message_text('Опрос сохранен.',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder([('Меню', 'menu')]))
+    bot.edit_message_text(
+        'Опрос сохранен.',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Меню', 'menu')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -261,12 +281,12 @@ def check_admin_id_in_stash(func):
         if callback.from_user.id in stashed_polls:
             return func(callback, *args, **kwargs)
         bot.answer_callback_query(callback.id)
-        bot.edit_message_text('Ваши сохраненные опросы не найдены.\n'
-                              'Возможно, это было вызвано перезапуском сервера.\n'
-                              'Если вы уверены, что это ошибка бота, свяжитесь с разработчиками.',
-                              callback.message.chat.id,
-                              callback.message.id,
-                              reply_markup=keyboard_builder([('Меню', 'menu')]))
+        bot.edit_message_text(
+            'Ваши сохраненные опросы не найдены.\n'
+            'Возможно, это было вызвано перезапуском сервера.\n',
+            callback.message.chat.id,
+            callback.message.id,
+            reply_markup=keyboard_builder([('Меню', 'menu')]))
 
     return wrapper
 
@@ -281,12 +301,12 @@ def check_poll_index_in_stash(func):
                 if poll_id < len(stashed_polls[callback.from_user.id]):
                     return func(callback, *args, **kwargs)
         bot.answer_callback_query(callback.id)
-        bot.edit_message_text('Искомый опрос не найден.\n'
-                              'Возможно, это было вызвано перезапуском сервера.\n'
-                              'Если вы уверены, что это ошибка бота, свяжитесь с разработчиками.',
-                              callback.message.chat.id,
-                              callback.message.id,
-                              reply_markup=keyboard_builder([('Меню', 'menu')]))
+        bot.edit_message_text(
+            'Искомый опрос не найден.\n'
+            'Возможно, это было вызвано перезапуском сервера.\n',
+            callback.message.chat.id,
+            callback.message.id,
+            reply_markup=keyboard_builder([('Меню', 'menu')]))
 
     return wrapper
 
@@ -295,14 +315,15 @@ def check_poll_index_in_stash(func):
 @check_admin_id_in_stash
 @instant_callback_answer
 def stashed_polls_handler(callback: CallbackQuery):
-    bot.edit_message_text('Список отложенных опросов:',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              list(map(lambda poll: (poll[1].question, 'stashed_poll ' + str(poll[0])),  # 13+NAME
-                                       enumerate(stashed_polls[callback.from_user.id]))),
-                              [('Назад', 'menu')],
-                              max_row_width=2))
+    bot.edit_message_text(
+        'Список отложенных опросов:',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            *map(lambda poll: [(poll[1].question, 'stashed_poll ' + str(poll[0]))],  # 13+NAME
+                 enumerate(stashed_polls[callback.from_user.id])),
+            [('Назад', 'menu')],
+            max_row_width=2))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stashed_poll '))
@@ -313,18 +334,19 @@ def stashed_poll_handler(callback: CallbackQuery):
     poll_index = int(callback.data.split()[1])
     poll = stashed_polls[callback.from_user.id][poll_index]
     joiner = '\n- '
-    bot.edit_message_text(f'Тема опроса:\n*{poll.question}*'
-                          f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
-                          f'\n\nФайл: {poll.filename}.csv'
-                          f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
-                          f'\nМультивыбор: {"Да" if poll.multi_choice else "Нет"}',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              [('Запустить', f'start_poll {poll_index}'),  # 11+INDEX
-                               ('Удалить', f'remove_stashed_poll {poll_index}')],  # 20+INDEX
-                              [('Назад', 'stashed_polls')]),
-                          parse_mode='Markdown')
+    bot.edit_message_text(
+        f'Тема опроса:\n*{poll.question}*'
+        f'\n\nВарианты ответов:{joiner + joiner.join(poll.answers)}'
+        f'\n\nФайл: {poll.filename}.csv'
+        f'\n\nАнонимный: {"Да" if poll.anonymous else "Нет"}'
+        f'\nМультивыбор: {"Да" if poll.multi_choice else "Нет"}',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Запустить', f'start_poll {poll_index}'),  # 11+INDEX
+             ('Удалить', f'remove_stashed_poll {poll_index}')],  # 20+INDEX
+            [('Назад', 'stashed_polls')]),
+        parse_mode='Markdown')
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('remove_stashed_poll '))
@@ -333,10 +355,11 @@ def stashed_poll_handler(callback: CallbackQuery):
 @instant_callback_answer
 def remove_stashed_poll_handler(callback: CallbackQuery):
     del stashed_polls[callback.from_user.id][int(callback.data.split()[1])]
-    bot.edit_message_text('Опрос удален.',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder([('Меню', 'menu')]))
+    bot.edit_message_text(
+        'Опрос удален.',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Назад', 'stashed_polls')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -371,7 +394,7 @@ def start_stashed_poll_handler(callback: CallbackQuery):
 
 
 def start_poll(poll: Poll):
-    json.dump(poll.__dict__, open(f'polls/active/{poll.filename}.json', 'w', encoding='utf-8'))
+    poll.dump(f'polls/active/{poll.filename}.json')
 
     if poll.anonymous:
         df = pd.DataFrame(columns=['id'])
@@ -387,8 +410,7 @@ def start_poll(poll: Poll):
         bot.send_message(
             receiver,
             poll.question,
-            reply_markup=keyboard_builder(
-                *list(map(lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')], enumerate(poll.answers)))))
+            reply_markup=keyboard_builder(*list(map(lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')], enumerate(poll.answers)))))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -400,27 +422,78 @@ def start_poll(poll: Poll):
 @instant_callback_answer
 def active_polls_handler(callback: CallbackQuery):
     polls = [name[:-5] for name in os.listdir('polls/active') if name.endswith('.json')]
-    bot.edit_message_text('Список активных опросов:',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              list(map(lambda poll: (poll, 'active_poll ' + poll), polls)),  # 12+NAME
-                              [('Назад', 'menu')],
-                          ))
+    if not polls:
+        bot.edit_message_text(
+            'Список опросов пуст.',
+            callback.message.chat.id,
+            callback.message.id,
+            reply_markup=keyboard_builder([('Меню', 'menu')]))
+        return
+    bot.edit_message_text(
+        'Список активных опросов:',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            list(map(lambda poll: (poll, 'active_poll ' + poll), polls)),  # 12+NAME
+            [('Назад', 'menu')],
+        ))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('active_poll '))
 @instant_callback_answer
 def active_poll_handler(callback: CallbackQuery):
-    poll = Poll.from_file(f'polls/active/{callback.data.split()[1]}.json')
-    bot.edit_message_text(str(poll),
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder(
-                              [('Статистика', 'poll_stat ' + callback.data.split()[1])],  # 10+NAME
-                              [('Завершить', 'stop_poll ' + callback.data.split()[1])],  # 10+NAME
-                              [('Назад', 'active_polls')]),
-                          parse_mode='Markdown')
+    poll = Poll.load(f'polls/active/{callback.data.split()[1]}.json')
+    bot.edit_message_text(
+        str(poll),
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Статистика', 'poll_stat ' + callback.data.split()[1])],  # 10+NAME
+            [('Завершить', 'stop_poll_sure ' + callback.data.split()[1])],  # 15+NAME
+            [('Назад', 'active_polls')]),
+        parse_mode='Markdown')
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('poll_stat '))
+def poll_stat_handler(callback: CallbackQuery):
+    poll = Poll.load(f'polls/active/{callback.data.split()[1]}.json')
+    poll_stat = [(poll.answers[i], poll.stat[i]) for i in range(len(poll.answers))]
+    sorted(poll_stat, key=lambda x: x[1], reverse=True)
+    total_voices = sum(poll.stat)
+    bot.edit_message_text(
+        '- ' + '\n- '.join([f'{ans_stat[0]}: {ans_stat[1]}{f"({ans_stat[1] * 100 // total_voices}%)" if total_voices and len(poll_stat) > 1 else ""}' for ans_stat in poll_stat]),
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Назад', 'active_poll ' + callback.data.split()[1])]))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll_sure '))
+@instant_callback_answer
+def stop_poll_sure_handler(callback: CallbackQuery):
+    bot.edit_message_text(
+        'Вы уверены, что хотите завершить опрос?'
+        '\nОпрос будет помещен в архив и его нельзя будет восстановить.',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Да', 'stop_poll ' + callback.data.split()[1]),  # 10+NAME
+             ('Назад', 'active_poll ' + callback.data.split()[1])]))  # 12+NAME
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll '))
+@instant_callback_answer
+def stop_poll_handler(callback: CallbackQuery):
+    os.replace(
+        'polls/active/' + callback.data.split()[1] + '.json',
+        'polls/archive/' + callback.data.split()[1] + '.json')
+    os.replace(
+        'polls/active/' + callback.data.split()[1] + '.csv',
+        'polls/archive/' + callback.data.split()[1] + '.csv')
+    bot.edit_message_text(
+        'Опрос завершен.',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Назад', 'active_polls')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -430,7 +503,21 @@ def active_poll_handler(callback: CallbackQuery):
 
 @bot.callback_query_handler(lambda cb: cb.data == 'archived_polls')
 def archived_polls_handler(callback: CallbackQuery):
-    plug_handler(callback, 'menu')
+    polls = [name[:-5] for name in os.listdir('polls/archive') if name.endswith('.json')]
+    if not polls:
+        bot.edit_message_text(
+            'Архив пуст.',
+            callback.message.chat.id,
+            callback.message.id,
+            reply_markup=keyboard_builder([('Меню', 'menu')]))
+        return
+    bot.edit_message_text(
+        'Список архивных опросов:',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            list(map(lambda poll: (poll, 'archived_poll ' + poll), polls)),  # 14+NAME
+            [('Меню', 'menu')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -499,26 +586,26 @@ def vote_handler(callback: CallbackQuery):
     df = pd.read_csv(f'polls/active/{filename}.csv')
     if callback.from_user.id in df['id'].values:
         return
-    poll = json.load(open(f'polls/{filename}.json', encoding='utf-8'))
+    poll = Poll.load(f'polls/active/{filename}.json')
 
-    if poll['anonymous']:
+    if poll.anonymous:
         df = pd.concat([df, pd.DataFrame([[callback.from_user.id]], columns=['id'])])
     else:
-        if not poll['multi_choice']:
+        if not poll.multi_choice:
             df = pd.concat([df, pd.DataFrame([[callback.from_user.id, int(answer)]], columns=['id', 'answer'])])
         else:
             answer = list(map(int, answer.split()))
             df = pd.concat([df, pd.DataFrame([[callback.from_user.id] +
-                                              [1 if i in answer else 0 for i in range(len(poll['answers']))]],
-                                             columns=['id'] + poll['answers'])])
+                                              [1 if i in answer else 0 for i in range(len(poll.answers))]],
+                                             columns=['id'] + poll.answers)])
     df.to_csv(f'polls/active/{filename}.csv', index=False)
 
-    if not poll['multi_choice']:
-        poll['stat'][int(answer)] += 1
+    if not poll.multi_choice:
+        poll.stat[int(answer)] += 1
     else:
         for ans in answer:
-            poll['stat'][ans] += 1
-    json.dump(poll, open(f'polls/active/{filename}.json', 'w', encoding='utf-8'))
+            poll.stat[ans] += 1
+    poll.dump(f'polls/active/{filename}.json')
 
     bot.answer_callback_query(callback.id, 'Спасибо, Ваш голос учтен!')
     bot.delete_message(callback.message.chat.id, callback.message.message_id)
@@ -535,10 +622,11 @@ def plug_command(message: Message):
 
 @instant_callback_answer
 def plug_handler(callback: CallbackQuery, home: str = 'menu'):
-    bot.edit_message_text('В разработке.',
-                          callback.message.chat.id,
-                          callback.message.id,
-                          reply_markup=keyboard_builder([('Назад', home)]))
+    bot.edit_message_text(
+        'В разработке.',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Назад', home)]))
 
 
 @bot.message_handler(commands=['info'])
