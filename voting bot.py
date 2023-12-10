@@ -48,7 +48,9 @@ command_list = 'Полный список команд:\n' \
 def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=max_row_width)
     for button_row in button_rows:
-        keyboard.add(*map(lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row), row_width=len(button_row))
+        keyboard.add(*map(
+            lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row),
+            row_width=len(button_row))
     return keyboard
 
 
@@ -120,7 +122,7 @@ def menu_command(message: Message):
         'Меню управления опросами',
         reply_markup=keyboard_builder(
             [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
-            [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
+            [('Активные', 'active_polls'), ('Архив', 'archive_polls')]))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
@@ -136,7 +138,7 @@ def menu_handler(callback: CallbackQuery):
         callback.message.id,
         reply_markup=keyboard_builder(
             [('Создать новый', 'new_poll'), ('Мои отложенные', 'stashed_polls')],
-            [('Активные', 'active_polls'), ('Архив', 'archived_polls')]))
+            [('Активные', 'active_polls'), ('Архив', 'archive_polls')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -410,7 +412,9 @@ def start_poll(poll: Poll):
         bot.send_message(
             receiver,
             poll.question,
-            reply_markup=keyboard_builder(*list(map(lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')], enumerate(poll.answers)))))
+            reply_markup=keyboard_builder(*list(map(
+                lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')],
+                enumerate(poll.answers)))))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -448,23 +452,37 @@ def active_poll_handler(callback: CallbackQuery):
         callback.message.chat.id,
         callback.message.id,
         reply_markup=keyboard_builder(
-            [('Статистика', 'poll_stat ' + callback.data.split()[1])],  # 10+NAME
+            [('Статистика', 'poll_stat a ' + callback.data.split()[1])],  # 12+NAME
             [('Завершить', 'stop_poll_sure ' + callback.data.split()[1])],  # 15+NAME
             [('Назад', 'active_polls')]),
         parse_mode='Markdown')
 
 
-@bot.callback_query_handler(lambda cb: cb.data.startswith('poll_stat '))
-def poll_stat_handler(callback: CallbackQuery):
-    poll = Poll.load(f'polls/active/{callback.data.split()[1]}.json')
+def get_poll_stat(poll: Poll) -> str:
     poll_stat = [(poll.answers[i], poll.stat[i]) for i in range(len(poll.answers))]
     sorted(poll_stat, key=lambda x: x[1], reverse=True)
     total_voices = sum(poll.stat)
+    lines = []
+    for ans_stat in poll_stat:
+        line = f'{ans_stat[0]}: {ans_stat[1]}'
+        if total_voices and len(poll_stat) > 1:
+            line += f' ({ans_stat[1] * 100 // total_voices}%)'
+        lines.append(line)
+    return '- ' + '\n- '.join(lines)
+
+
+# Works both with active and archive polls
+@bot.callback_query_handler(lambda cb: cb.data.startswith('poll_stat '))
+@instant_callback_answer
+def poll_stat_handler(callback: CallbackQuery):
+    poll_state = 'active' if callback.data.split()[1] == 'a' else 'archive'
+    poll_name = callback.data.split()[2]
+    poll = Poll.load(f'polls/{poll_state}/{poll_name}.json')
     bot.edit_message_text(
-        '- ' + '\n- '.join([f'{ans_stat[0]}: {ans_stat[1]}{f"({ans_stat[1] * 100 // total_voices}%)" if total_voices and len(poll_stat) > 1 else ""}' for ans_stat in poll_stat]),
+        get_poll_stat(poll),
         callback.message.chat.id,
         callback.message.id,
-        reply_markup=keyboard_builder([('Назад', 'active_poll ' + callback.data.split()[1])]))
+        reply_markup=keyboard_builder([('Назад', f'{poll_state}_poll {poll_name}')]))
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll_sure '))
@@ -501,8 +519,9 @@ def stop_poll_handler(callback: CallbackQuery):
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
 
-@bot.callback_query_handler(lambda cb: cb.data == 'archived_polls')
-def archived_polls_handler(callback: CallbackQuery):
+@bot.callback_query_handler(lambda cb: cb.data == 'archive_polls')
+@instant_callback_answer
+def archive_polls_handler(callback: CallbackQuery):
     polls = [name[:-5] for name in os.listdir('polls/archive') if name.endswith('.json')]
     if not polls:
         bot.edit_message_text(
@@ -516,8 +535,22 @@ def archived_polls_handler(callback: CallbackQuery):
         callback.message.chat.id,
         callback.message.id,
         reply_markup=keyboard_builder(
-            list(map(lambda poll: (poll, 'archived_poll ' + poll), polls)),  # 14+NAME
+            list(map(lambda poll: (poll, 'archive_poll ' + poll), polls)),  # 14+NAME
             [('Меню', 'menu')]))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('archive_poll '))
+@instant_callback_answer
+def archive_poll_handler(callback: CallbackQuery):
+    poll = Poll.load(f'polls/archive/{callback.data.split()[1]}.json')
+    bot.edit_message_text(
+        str(poll),
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Статистика', 'poll_stat h ' + callback.data.split()[1])],  # 12+NAME
+            [('Назад', 'archive_polls')]),
+        parse_mode='Markdown')
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
