@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import string
 from dataclasses import dataclass
 
@@ -42,10 +43,10 @@ connected_user_chat_ids = []
 new_creating_polls: dict[int, Poll] = {}
 stashed_polls: dict[int, list[Poll]] = {}
 invitations = []
-command_list = 'Полный список команд:\n' \
-               '/menu - отобразить меню\n' \
-               '/somefunction [some parameters] - некоторая новая функция\n' \
-               '/help - полный перечень команд'
+command_list = 'Перечень команд:\n' \
+               '/subscribe - подписаться на опросы\n' \
+               '/unsubscribe - отписаться от опросов\n' \
+               '/help - перечень команд'
 
 
 def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> InlineKeyboardMarkup:
@@ -186,7 +187,6 @@ def poll_init_topic_handler(message: Message):
     bot.register_next_step_handler(message, poll_init_answers_handler)
 
 
-# TODO: add validation
 def poll_init_answers_handler(message: Message):
     poll = new_creating_polls[message.from_user.id]
     poll.answers = list(map(str.strip, message.text.split(';')))
@@ -208,6 +208,12 @@ def poll_init_filename_handler(message: Message):
         bot.send_message(
             message.from_user.id,
             f'Название слишком длинное (максимум {filename_limit} символов), выберите другое название')
+        bot.register_next_step_handler(message, poll_init_filename_handler)
+        return
+    if not re.search(r'^[a-zA-Zа-яА-Я0-9_\-]+$', filename):
+        bot.send_message(
+            message.from_user.id,
+            'Недопустимые символы в названии, выберите другое название')
         bot.register_next_step_handler(message, poll_init_filename_handler)
         return
     new_creating_polls[message.from_user.id].filename = filename
@@ -232,8 +238,8 @@ def poll_init_anon_handler(callback: CallbackQuery):
         callback.message.chat.id,
         callback.message.id,
         reply_markup=keyboard_builder(
-            [('Один вариант', 'new_poll_set_multi single'),
-             ('Несколько вариантов', 'new_poll_set_multi multi')],
+            [('Да', 'new_poll_set_multi multi'),
+             ('Нет', 'new_poll_set_multi single')],
         ))
 
 
