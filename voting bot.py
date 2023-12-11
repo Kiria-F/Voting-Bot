@@ -120,6 +120,7 @@ def help_command(message: Message):
 
 
 @bot.message_handler(commands=['menu'])
+@admin_permission
 def menu_command(message: Message):
     bot.send_message(
         message.from_user.id,
@@ -131,6 +132,7 @@ def menu_command(message: Message):
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
 @instant_callback_answer
+@admin_permission
 def menu_handler(callback: CallbackQuery):
     if len(callback.data.split(maxsplit=1)) > 1:
         param = callback.data.split(maxsplit=1)[1]
@@ -665,7 +667,6 @@ def subscribe_command(message: Message):
 def m_vote_handler(callback: CallbackQuery):
     poll = Poll.load(f'polls/active/{callback.data.split()[1]}.json')
     choice_state = list(map(int, callback.data.split()[2]))
-    # ◻⬛◻️🔲
     bot.edit_message_text(
         poll.question,
         callback.message.chat.id,
@@ -691,15 +692,15 @@ def vote_handler(callback: CallbackQuery):
         if poll.anonymous:
             print(callback.from_user.id, file=storage)
         else:
-            if not poll.multi_choice:
+            if poll.multi_choice:
                 print(
                     callback.from_user.id,
-                    answer,
+                    *answer,
                     file=storage, sep=',')
             else:
                 print(
                     callback.from_user.id,
-                    *[1 if i in answer else 0 for i in range(len(poll.answers))],
+                    answer,
                     file=storage, sep=',')
 
     # JSON updating
