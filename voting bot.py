@@ -1,3 +1,4 @@
+import os
 import random
 import string
 from dataclasses import dataclass
@@ -19,10 +20,12 @@ class Poll:
 
     @staticmethod
     def load(filename: str):
-        return Poll(**json.load(open(filename, encoding='utf-8')))
+        with open(filename, encoding='utf-8') as file:
+            return Poll(**json.load(file))
 
     def dump(self, filename: str):
-        json.dump(self.__dict__, open(filename, 'w', encoding='utf-8'))
+        with open(filename, 'w', encoding='utf-8') as file:
+            json.dump(self.__dict__, file, indent=4, ensure_ascii=False)
 
     def __str__(self):
         return f'Тема опроса:\n*{self.question}*' + \
@@ -522,10 +525,28 @@ def stop_poll_sure_handler(callback: CallbackQuery):
              ('Назад', 'active_poll ' + callback.data.split()[1])]))  # 12+NAME
 
 
-# TODO: Consistency check
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll '))
 @instant_callback_answer
 def stop_poll_handler(callback: CallbackQuery):
+    poll = Poll.load(f'polls/active/{callback.data.split()[1]}.json')
+    if not poll.anonymous:
+        df = pd.read_csv(f'polls/active/{callback.data.split()[1]}.csv')
+        df = df.drop_duplicates(subset='id')
+        if poll.multi_choice:
+            ser = df.iloc[:, 1:].sum()
+            state_sums = [ser[index] for index in range(len(poll.answers))]
+        else:
+            ser = df['answer'].value_counts()
+            state_sums = [0] * len(poll.answers)
+            for index in ser.index:
+                state_sums[index] = ser[index]
+        state_sums = list(map(int, state_sums))
+        if poll.stat != state_sums:
+            print('Consistency repaired:', f'json stat: {poll.stat}', f'csv stat: {state_sums}', sep='\n')
+            poll.stat = state_sums
+            os.remove(f'polls/active/{poll.filename}.json')
+            poll.dump(f'polls/active/{poll.filename}.json')
+
     os.replace(
         'polls/active/' + callback.data.split()[1] + '.json',
         'polls/archive/' + callback.data.split()[1] + '.json')
@@ -685,8 +706,9 @@ def vote_handler(callback: CallbackQuery):
     if not poll.multi_choice:
         poll.stat[answer] += 1
     else:
-        for ans in answer:
-            poll.stat[ans] += 1
+        for index in range(len(poll.answers)):
+            if answer[index]:
+                poll.stat[index] += 1
     poll.dump(f'polls/active/{filename}.json')
 
     # Callback
@@ -711,11 +733,6 @@ def echo_command(message: Message):
 @bot.message_handler(regexp=r'^/echo .+$')
 def echo_command(message: Message):
     print(message.text[6:])
-
-
-@bot.message_handler(commands=['test'])
-def test_command(message: Message):
-    bot.send_message(message.from_user.id, 'Тест', reply_markup=keyboard_builder([('Тест', 't' * 64)]))
 
 
 bot.infinity_polling()
