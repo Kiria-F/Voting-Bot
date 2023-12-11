@@ -180,6 +180,7 @@ def poll_init_topic_handler(message: Message):
     bot.send_message(message.chat.id, 'Ведите варианты ответов (через точку с запятой [   ;   ])')
     bot.register_next_step_handler(message, poll_init_answers_handler)
 
+
 # TODO: add validation
 def poll_init_answers_handler(message: Message):
     poll = new_creating_polls[message.from_user.id]
@@ -696,19 +697,6 @@ def vote_handler(callback: CallbackQuery):
 # ╔════════════════════════════════════════════════════════════════════════════════╗
 # ║                                   Служебное                                    ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
-
-
-def plug_command(message: Message):
-    bot.send_message(message.from_user.id, 'В разработке.')
-
-
-@instant_callback_answer
-def plug_handler(callback: CallbackQuery, home: str = 'menu'):
-    bot.edit_message_text(
-        'В разработке.',
-        callback.message.chat.id,
-        callback.message.id,
-        reply_markup=keyboard_builder([('Назад', home)]))
 
 
 @bot.message_handler(commands=['info'])
