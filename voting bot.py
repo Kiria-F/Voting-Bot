@@ -44,6 +44,7 @@ new_creating_polls: dict[int, Poll] = {}
 stashed_polls: dict[int, list[Poll]] = {}
 invitations = []
 command_list = 'Перечень команд:\n' \
+               '/menu - главное меню\n' \
                '/subscribe - подписаться на опросы\n' \
                '/unsubscribe - отписаться от опросов\n' \
                '/help - перечень команд'
@@ -106,7 +107,11 @@ def instant_callback_answer(func):
 def start_command(message: Message):
     bot.send_message(
         message.from_user.id,
-        'Привет, я чат-бот для проведения анонимных опросов.\n\n' + command_list,
+        'Привет, это чат-бот для проведения анонимных (и не только) опросов.\n\n'
+        'Сейчас бот находится в режиме презентации, '
+        'каждый желающий в течение может попробовать создать и запустить опрос.\n\n'
+        'Не забудьте подписаться на опросы ( /subscribe ), '
+        'чтобы не пропустить опросы ваших коллег!\n\n' + command_list,
         reply_markup=keyboard_builder([('Меню', 'menu')]))
 
 
@@ -121,7 +126,7 @@ def help_command(message: Message):
 
 
 @bot.message_handler(commands=['menu'])
-@admin_permission
+# @admin_permission
 def menu_command(message: Message):
     bot.send_message(
         message.from_user.id,
@@ -133,7 +138,7 @@ def menu_command(message: Message):
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('menu'))
 @instant_callback_answer
-@admin_permission
+# @admin_permission
 def menu_handler(callback: CallbackQuery):
     if len(callback.data.split(maxsplit=1)) > 1:
         param = callback.data.split(maxsplit=1)[1]
