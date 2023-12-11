@@ -467,7 +467,7 @@ def active_polls_handler(callback: CallbackQuery):
         callback.message.chat.id,
         callback.message.id,
         reply_markup=keyboard_builder(
-            list(map(lambda poll: (poll, 'active_poll ' + poll), polls)),  # 12+NAME
+            *[[(poll, 'active_poll ' + poll)] for poll in polls],  # 12+NAME
             [('Назад', 'menu')],
         ))
 
@@ -584,7 +584,6 @@ def archive_polls_handler(callback: CallbackQuery):
         callback.message.id,
         reply_markup=keyboard_builder(
             *[[(poll, 'archive_poll ' + poll)] for poll in polls],  # 14+NAME
-            # list(map(lambda poll: (poll, 'archive_poll ' + poll), polls)),
             [('Меню', 'menu')]))
 
 
