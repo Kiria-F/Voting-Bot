@@ -515,7 +515,6 @@ def poll_stat_handler(callback: CallbackQuery):
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll_sure '))
-@instant_callback_answer
 def stop_poll_sure_handler(callback: CallbackQuery):
     bot.edit_message_text(
         'Вы уверены, что хотите завершить опрос?'
@@ -525,6 +524,7 @@ def stop_poll_sure_handler(callback: CallbackQuery):
         reply_markup=keyboard_builder(
             [('Да', 'stop_poll ' + callback.data.split()[1]),  # 10+NAME
              ('Назад', 'active_poll ' + callback.data.split()[1])]))  # 12+NAME
+    bot.answer_callback_query(callback.id)
 
 
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll '))
@@ -596,9 +596,32 @@ def archive_poll_handler(callback: CallbackQuery):
         callback.message.chat.id,
         callback.message.id,
         reply_markup=keyboard_builder(
-            [('Статистика', 'poll_stat h ' + callback.data.split()[1])],  # 12+NAME
+            [('Статистика', 'poll_stat h ' + poll.filename)],  # 12+NAME
+            [('Удалить', 'delete_poll_sure ' + poll.filename)],  # 17+NAME
             [('Назад', 'archive_polls')]),
         parse_mode='Markdown')
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('delete_poll_sure '))
+def delete_poll_sure_handler(callback: CallbackQuery):
+    bot.edit_message_text(
+        'Вы уверены, что хотите удалить этот опрос?',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            [('Да', 'delete_poll ' + callback.data.split()[1]), ('Назад', 'archive_polls')]))
+
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('delete_poll '))
+def delete_poll_handler(callback: CallbackQuery):
+    poll_name = callback.data.split()[1]
+    os.remove(f'polls/archive/{poll_name}.json')
+    os.remove(f'polls/archive/{poll_name}.csv')
+    bot.edit_message_text(
+        'Опрос удален.',
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder([('Назад', 'archive_polls')]))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
