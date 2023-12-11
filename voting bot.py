@@ -48,8 +48,9 @@ command_list = 'Полный список команд:\n' \
 def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup(row_width=max_row_width)
     for button_row in button_rows:
-        keyboard.add(*map(
-            lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row),
+        keyboard.add(
+            *map(
+                lambda button: InlineKeyboardButton(button[0], callback_data=button[1]), button_row),
             row_width=len(button_row))
     return keyboard
 
@@ -58,7 +59,7 @@ def keyboard_builder(*button_rows: list[tuple[str, str]], max_row_width=3) -> In
 # ║                                   Декораторы                                   ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
-# TODO Ещё кучу валидаторов
+# TODO: Ещё кучу валидаторов
 
 def admin_permission(func):
     def wrapper(mes_cb: Message | CallbackQuery, *args, **kwargs):
@@ -179,7 +180,7 @@ def poll_init_topic_handler(message: Message):
     bot.send_message(message.chat.id, 'Ведите варианты ответов (через точку с запятой [   ;   ])')
     bot.register_next_step_handler(message, poll_init_answers_handler)
 
-
+# TODO: add validation
 def poll_init_answers_handler(message: Message):
     poll = new_creating_polls[message.from_user.id]
     poll.answers = list(map(str.strip, message.text.split(';')))
@@ -322,8 +323,9 @@ def stashed_polls_handler(callback: CallbackQuery):
         callback.message.chat.id,
         callback.message.id,
         reply_markup=keyboard_builder(
-            *map(lambda poll: [(poll[1].question, 'stashed_poll ' + str(poll[0]))],  # 13+NAME
-                 enumerate(stashed_polls[callback.from_user.id])),
+            *map(
+                lambda poll: [(poll[1].question, 'stashed_poll ' + str(poll[0]))],  # 13+NAME
+                enumerate(stashed_polls[callback.from_user.id])),
             [('Назад', 'menu')],
             max_row_width=2))
 
@@ -395,26 +397,47 @@ def start_stashed_poll_handler(callback: CallbackQuery):
     start_poll(stashed_polls[callback.from_user.id].pop(int(callback.data.split()[1])))
 
 
+def gen_m_poll_text_cb(poll: Poll, choice_state: list[int], index: int) -> tuple[str, str]:
+    b_state = choice_state.copy()
+    text = ('✅' if b_state[index] else '◻') + ' ' + poll.answers[index]
+    b_state[index] = 1 - b_state[index]
+    cb = ' '.join(('m_vote', poll.filename, ''.join(map(str, b_state))))
+    return text, cb
+
+
 def start_poll(poll: Poll):
+
+    # Creating JSON
     poll.dump(f'polls/active/{poll.filename}.json')
 
+    # Creating CSV
     if poll.anonymous:
         df = pd.DataFrame(columns=['id'])
     elif not poll.multi_choice:
         df = pd.DataFrame(columns=['id', 'answer'])
     else:
-        df = pd.DataFrame(columns=['id'] + poll.answers)
+        df = pd.DataFrame(columns=['id'] + [index for index in range(len(poll.answers))])
     df.to_csv(f'polls/active/{poll.filename}.csv', index=False)
 
+    # Generating keyboard
+    if poll.multi_choice:
+        init_choice_state = [0] * len(poll.answers)
+        keyboard = keyboard_builder(
+            *[[gen_m_poll_text_cb(poll, init_choice_state, index)] for index in range(len(poll.answers))],
+            [('Подтвердить', ' '.join(('vote', poll.filename, ''.join(map(str, init_choice_state)))))])
+    else:
+        keyboard = keyboard_builder(
+            *map(
+                lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')],
+                enumerate(poll.answers)))
+
+    # Sending poll
     subscribed = pd.read_csv('subscribed.csv')['id'].to_list()
     for receiver in subscribed:
-        t = list(map(lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')], enumerate(poll.answers)))
         bot.send_message(
             receiver,
             poll.question,
-            reply_markup=keyboard_builder(*list(map(
-                lambda ans: [(ans[1], f'vote {poll.filename} {str(ans[0])}')],
-                enumerate(poll.answers)))))
+            reply_markup=keyboard)
 
 
 # ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -498,6 +521,7 @@ def stop_poll_sure_handler(callback: CallbackQuery):
              ('Назад', 'active_poll ' + callback.data.split()[1])]))  # 12+NAME
 
 
+# TODO: Consistency check
 @bot.callback_query_handler(lambda cb: cb.data.startswith('stop_poll '))
 @instant_callback_answer
 def stop_poll_handler(callback: CallbackQuery):
@@ -613,33 +637,58 @@ def subscribe_command(message: Message):
 # ║                               Обработка голосов                                ║
 # ╚════════════════════════════════════════════════════════════════════════════════╝
 
+
+@bot.callback_query_handler(lambda cb: cb.data.startswith('m_vote '))
+@instant_callback_answer
+def m_vote_handler(callback: CallbackQuery):
+    poll = Poll.load(f'polls/active/{callback.data.split()[1]}.json')
+    choice_state = list(map(int, callback.data.split()[2]))
+    # ◻⬛◻️🔲
+    bot.edit_message_text(
+        poll.question,
+        callback.message.chat.id,
+        callback.message.id,
+        reply_markup=keyboard_builder(
+            *[[gen_m_poll_text_cb(poll, choice_state, index)] for index in range(len(poll.answers))],
+            [('Подтвердить', ' '.join(('vote', poll.filename, ''.join(map(str, choice_state)))))],
+        )
+    )
+
+
 @bot.callback_query_handler(lambda cb: cb.data.startswith('vote '))
 def vote_handler(callback: CallbackQuery):
     filename, answer = callback.data.split(maxsplit=3)[1:]
-    df = pd.read_csv(f'polls/active/{filename}.csv')
-    if callback.from_user.id in df['id'].values:
-        return
     poll = Poll.load(f'polls/active/{filename}.json')
-
-    if poll.anonymous:
-        df = pd.concat([df, pd.DataFrame([[callback.from_user.id]], columns=['id'])])
+    if poll.multi_choice:
+        answer = list(map(int, list(answer)))
     else:
-        if not poll.multi_choice:
-            df = pd.concat([df, pd.DataFrame([[callback.from_user.id, int(answer)]], columns=['id', 'answer'])])
-        else:
-            answer = list(map(int, answer.split()))
-            df = pd.concat([df, pd.DataFrame([[callback.from_user.id] +
-                                              [1 if i in answer else 0 for i in range(len(poll.answers))]],
-                                             columns=['id'] + poll.answers)])
-    df.to_csv(f'polls/active/{filename}.csv', index=False)
+        answer = int(answer)
 
+    # CSV updating
+    with open(f'polls/active/{filename}.csv', 'a', newline='', encoding='utf-8') as storage:
+        if poll.anonymous:
+            print(callback.from_user.id, file=storage)
+        else:
+            if not poll.multi_choice:
+                print(
+                    callback.from_user.id,
+                    answer,
+                    file=storage, sep=',')
+            else:
+                print(
+                    callback.from_user.id,
+                    *[1 if i in answer else 0 for i in range(len(poll.answers))],
+                    file=storage, sep=',')
+
+    # JSON updating
     if not poll.multi_choice:
-        poll.stat[int(answer)] += 1
+        poll.stat[answer] += 1
     else:
         for ans in answer:
             poll.stat[ans] += 1
     poll.dump(f'polls/active/{filename}.json')
 
+    # Callback
     bot.answer_callback_query(callback.id, 'Спасибо, Ваш голос учтен!')
     bot.delete_message(callback.message.chat.id, callback.message.message_id)
 
@@ -664,10 +713,11 @@ def plug_handler(callback: CallbackQuery, home: str = 'menu'):
 
 @bot.message_handler(commands=['info'])
 def echo_command(message: Message):
-    print(f'\nID: {message.from_user.id}\n'
-          f'Имя: {message.from_user.first_name}\n'
-          f'Фамилия: {message.from_user.last_name}\n'
-          f'Ссылка: @{message.from_user.username}\n')
+    print(
+        f'\nID: {message.from_user.id}\n'
+        f'Имя: {message.from_user.first_name}\n'
+        f'Фамилия: {message.from_user.last_name}\n'
+        f'Ссылка: @{message.from_user.username}\n')
 
 
 @bot.message_handler(regexp=r'^/echo .+$')
