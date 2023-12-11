@@ -713,6 +713,9 @@ def vote_handler(callback: CallbackQuery):
     poll = Poll.load(f'polls/active/{filename}.json')
     if poll.multi_choice:
         answer = list(map(int, list(answer)))
+        if 1 not in answer:
+            bot.answer_callback_query(callback.id, 'Нужно выбрать хотя бы один вариант')
+            return
     else:
         answer = int(answer)
 
