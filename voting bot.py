@@ -183,13 +183,13 @@ def new_poll_handler(callback: CallbackQuery):
 
 def poll_init_topic_handler(message: Message):
     new_creating_polls[message.from_user.id].question = message.text.strip()
-    bot.send_message(message.chat.id, 'Ведите варианты ответов (через точку с запятой [   ;   ])')
+    bot.send_message(message.chat.id, 'Ведите варианты ответов\n(каждый с новой строке)')
     bot.register_next_step_handler(message, poll_init_answers_handler)
 
 
 def poll_init_answers_handler(message: Message):
     poll = new_creating_polls[message.from_user.id]
-    poll.answers = list(map(str.strip, message.text.split(';')))
+    poll.answers = list(map(str.strip, message.text.split('\n')))
     poll.stat = [0] * len(poll.answers)
     bot.send_message(message.from_user.id, 'Введите название соответствующего .csv файла')
     bot.register_next_step_handler(message, poll_init_filename_handler)
